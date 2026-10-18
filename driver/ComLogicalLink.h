@@ -2,18 +2,23 @@
 
 #include "pdu_api.h"
 #include "ComPrimitive.h"
+#include "gmlan_ext/IGmlanAdapter.h"
 
 #include <thread>
 #include <queue>
 #include <mutex>
+#include <memory>
+#include <vector>
 
 enum Protocol
 {
 	CLL_ISO14230 = 0x01,
-	CLL_KW82 = 0x02
+	CLL_KW82 = 0x02,
+	CLL_GMLAN_CAN = 0x03,
+	CLL_SAAB_CAN = 0x03 // Backward-compatibility alias
 };
 
-class ComLogicalLink
+class ComLogicalLink : public ILogicalLinkEventSink
 {
 public:
 
@@ -30,15 +35,29 @@ public:
 	long StartMsgFilter(unsigned long filterType);
 
 	void RegisterEventCallback(CALLBACKFNC cb);
+	CALLBACKFNC GetEventCallback() const { return m_eventCallbackFnc; }
 	bool GetEvent(PDU_EVENT_ITEM* & pEvt);
-	void SignalEvent(PDU_EVENT_ITEM* pEvt);
+	void SignalEvent(PDU_EVENT_ITEM* pEvt) override;
+	void QueueEventOnly(PDU_EVENT_ITEM* pEvt) override { QueueEvent(pEvt); }
+	void NotifyEvents(void* pCopTag = nullptr) override { SignalEvents(pCopTag); }
+
+	unsigned long GetModuleHandle() const override { return m_hMod; }
+	unsigned long GetLinkHandle() const override { return m_hCLL; }
+
+	void SetCllTag(void* tag) { m_pCllTag = tag; }
+	void* GetCllTag() const override { return m_pCllTag; }
+
+	void SetGmlanAdapter(std::shared_ptr<IGmlanAdapter> adapter) { m_pGmlanAdapter = adapter; }
+	std::shared_ptr<IGmlanAdapter> GetGmlanAdapter() const { return m_pGmlanAdapter; }
+	void SetSaabAdapter(std::shared_ptr<IGmlanAdapter> adapter) { SetGmlanAdapter(adapter); }
+	std::shared_ptr<IGmlanAdapter> GetSaabAdapter() const { return GetGmlanAdapter(); }
 
 	long SetComParam();
 
-private:
-	void SignalEvents();
 	void QueueEvent(PDU_EVENT_ITEM* pEvt);
+	void SignalEvents(void* pCopTag = nullptr);
 
+private:
 	void run();
 
 	void ProcessCop(std::shared_ptr<ComPrimitive> cop);
@@ -59,9 +78,13 @@ private:
 
 	UNUM32 m_hMod;
 	UNUM32 m_hCLL;
+	void* m_pCllTag = nullptr;
 	T_PDU_STATUS m_status;
 
 	Protocol m_protocol;
+
+	// GMLAN custom protocol adapter
+	std::shared_ptr<IGmlanAdapter> m_pGmlanAdapter;
 
 	//J2534 specific
 	unsigned long m_deviceID;

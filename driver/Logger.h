@@ -23,7 +23,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <Windows.h>
+#include <windows.h>
 #include <mutex>
 
 #define LOG_FILE "C:\\Users\\Public\\dpdu_activity.log"

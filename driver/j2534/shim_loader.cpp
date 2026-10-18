@@ -18,7 +18,22 @@
 **
 */
 
-#include <afxmt.h>
+// [UPSTREAM ORIGINAL - PRESERVED AS COMMENT]
+// #include <afxmt.h>
+
+// [GMLAN / MINGW FIX: Lightweight Win32 replacement for MFC CCriticalSection to eliminate MFC dependency]
+#include <windows.h>
+#include <tchar.h>
+
+class CCriticalSection {
+public:
+    CCriticalSection() { InitializeCriticalSection(&m_cs); }
+    ~CCriticalSection() { DeleteCriticalSection(&m_cs); }
+    void Lock() { EnterCriticalSection(&m_cs); }
+    void Unlock() { LeaveCriticalSection(&m_cs); }
+private:
+    CRITICAL_SECTION m_cs;
+};
 //#include "../pch.h"
 
 #include "j2534_v0404.h"

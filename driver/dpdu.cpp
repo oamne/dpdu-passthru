@@ -4,16 +4,22 @@
 #include "pdu_api.h"
 #include "j2534/shim_loader.h"
 #include "ComLogicalLink.h"
+#include "gmlan_ext/Tech2WinMemory.h"
+#include "gmlan_ext/PassThruChannelManager.h"
+#include "gmlan_ext/GmlanCanAdapter.h"
 
 #include <chrono>
 #include <vector>
 #include <string>
 #include <map>
+#include <atomic>
 
 static std::vector<cPassThruInfo> m_registryList;
 static unsigned long m_deviceID = 0;
 static std::map<UNUM32, std::string>m_objectIdMap;
 static std::map<UNUM32, std::shared_ptr<ComLogicalLink>> m_commChannels;
+static std::atomic<UNUM32> s_nextCllHandle{1};
+static CALLBACKFNC m_moduleCallback = nullptr;
 
 T_PDU_ERROR __stdcall PDUConstruct(CHAR8* OptionStr, void* pAPITag)
 {
@@ -29,6 +35,7 @@ T_PDU_ERROR __stdcall PDUConstruct(CHAR8* OptionStr, void* pAPITag)
 T_PDU_ERROR __stdcall PDUDestruct()
 {
 	LOGGER.logWarn("STUB", "PDUDestruct is unimplimented");
+	PassThruChannelManager::Instance().Reset();
 	return PDU_STATUS_NOERROR;
 }
 
@@ -63,6 +70,8 @@ T_PDU_ERROR __stdcall PDUModuleDisconnect(UNUM32 hMod)
 	T_PDU_ERROR ret = PDU_STATUS_NOERROR;
 
 	LOGGER.logInfo("PDUModuleDisconnect", "hMod %u", hMod);
+
+	PassThruChannelManager::Instance().Reset();
 
 	long ptret = _PassThruClose(m_deviceID);
 	if (ptret != STATUS_NOERROR)
@@ -192,7 +201,7 @@ T_PDU_ERROR __stdcall PDUGetResourceStatus(PDU_RSC_STATUS_ITEM* pResourceStatus)
 
 T_PDU_ERROR __stdcall PDUCreateComLogicalLink(UNUM32 hMod, PDU_RSC_DATA* pRscData, UNUM32 resourceId, void* pCllTag, UNUM32* phCLL, PDU_FLAG_DATA* pCllCreateFlag)
 {
-	UNUM32 idx = m_commChannels.size();
+	UNUM32 idx = s_nextCllHandle.fetch_add(1);
 	Protocol protocol = CLL_ISO14230;
 
 	auto it = m_objectIdMap.find(pRscData->ProtocolId);
@@ -206,11 +215,72 @@ T_PDU_ERROR __stdcall PDUCreateComLogicalLink(UNUM32 hMod, PDU_RSC_DATA* pRscDat
 		{
 			protocol = CLL_KW82;
 		}
+		else if (it->second.find("J2411") != std::string::npos || it->second.find("SW_CAN") != std::string::npos ||
+		         it->second.find("11898") != std::string::npos || it->second.find("CAN") != std::string::npos ||
+		         it->second.find("15765") != std::string::npos)
+		{
+			protocol = CLL_GMLAN_CAN;
+		}
 
 		LOGGER.logInfo("PDUCreateComLogicalLink", "Detected CLL Protocol %u, DPDU: %s", protocol, it->second.c_str());
 	}
 
+	bool isSwCan = false;
+	bool isHsCan = false;
+	bool isMsCan = false;
+
+	if (pRscData->NumPinData > 0)
+	{
+		for (UNUM32 i = 0; i < pRscData->NumPinData; ++i)
+		{
+			uint8_t pin = pRscData->pDLCPinData[i].DLCPinNumber;
+			if (pin == 1)
+			{
+				isSwCan = true;
+				protocol = CLL_GMLAN_CAN;
+			}
+			else if (pin == 3 || pin == 11)
+			{
+				isMsCan = true;
+				protocol = CLL_GMLAN_CAN;
+			}
+			else if (pin == 6 || pin == 14)
+			{
+				isHsCan = true;
+				protocol = CLL_GMLAN_CAN;
+			}
+		}
+	}
+	else
+	{
+		auto it = m_objectIdMap.find(pRscData->ProtocolId);
+		if (it != m_objectIdMap.end())
+		{
+			if (it->second.find("J2411") != std::string::npos || it->second.find("SW_CAN") != std::string::npos)
+			{
+				isSwCan = true;
+			}
+			else
+			{
+				isHsCan = true;
+			}
+		}
+	}
+
 	auto cll = std::shared_ptr<ComLogicalLink>(new ComLogicalLink(hMod, idx, m_deviceID, protocol));
+	cll->SetCllTag(pCllTag);
+	if (m_moduleCallback != nullptr)
+	{
+		cll->RegisterEventCallback(m_moduleCallback);
+	}
+
+	if (protocol == CLL_GMLAN_CAN || protocol == CLL_SAAB_CAN)
+	{
+		SaabBusType busType = isMsCan ? SaabBusType::BUS_MSCAN : (isHsCan ? SaabBusType::BUS_HSCAN : SaabBusType::BUS_SWCAN);
+		cll->SetGmlanAdapter(std::make_shared<GmlanCanAdapter>(busType));
+		LOGGER.logInfo("PDUCreateComLogicalLink", "Attached GmlanCanAdapter (busType: %d) to hCLL %u", static_cast<int>(busType), idx);
+	}
+
 	m_commChannels.insert({ idx, cll });
 
 	*phCLL = idx;
@@ -324,6 +394,27 @@ T_PDU_ERROR __stdcall PDUGetComParam(UNUM32 hMod, UNUM32 hCLL, UNUM32 ParamId, P
 		(*pParamItem)->pComParamData = new UNUM32;
 		*(UNUM32*)((*pParamItem)->pComParamData) = 4800;
 	}
+	else if (ParamId == 101 || ParamId == 102 || ParamId == 104 || ParamId == 118 ||
+	         ParamId == 119 || ParamId == 120 || ParamId == 146 || ParamId == 147)
+	{
+		UNUM32 val = 0;
+		if (ParamId == 101) val = 50;          // CP_P2Max (50 ms)
+		else if (ParamId == 102) val = 5000;   // CP_P2Star (5000 ms)
+		else if (ParamId == 104) val = 500000; // CP_Baudrate (500000 bps)
+		else if (ParamId == 118) val = 0x245;  // CP_CanPhysReqId (0x245)
+		else if (ParamId == 119) val = 0x645;  // CP_CanRespUSDTId (0x645)
+		else if (ParamId == 120) val = 0x5E8;  // CP_CanRespUUDTId (0x5E8)
+		else if (ParamId == 146) val = 1;      // CP_NetworkLine (Pin 1)
+		else if (ParamId == 147) val = 1;      // CP_K_L_LineInit
+
+		*pParamItem = new PDU_PARAM_ITEM;
+		(*pParamItem)->ItemType = PDU_IT_PARAM;
+		(*pParamItem)->ComParamId = ParamId;
+		(*pParamItem)->ComParamClass = PDU_PC_BUSTYPE;
+		(*pParamItem)->ComParamDataType = PDU_PT_UNUM32;
+		(*pParamItem)->pComParamData = new UNUM32;
+		*(UNUM32*)((*pParamItem)->pComParamData) = val;
+	}
 
 	return PDU_STATUS_NOERROR;
 }
@@ -388,26 +479,30 @@ T_PDU_ERROR __stdcall PDUStartComPrimitive(UNUM32 hMod, UNUM32 hCLL, UNUM32 CoPT
 		switch (CoPType)
 		{
 		case PDU_COPT_UPDATEPARAM:
-			//TODO set comm parameters
-			*phCoP = PDU_ID_UNDEF - 1;
+		{
+			static std::atomic<uint32_t> s_updateParamCounter{ 2000 };
+			*phCoP = s_updateParamCounter.fetch_add(1);
 
-			pEvt = new PDU_EVENT_ITEM;
-			pEvt->hCop = *phCoP;
-			pEvt->ItemType = PDU_IT_STATUS;
-			pEvt->pCoPTag = pCoPTag;
-			pEvt->pData = new PDU_STATUS_DATA;
-			*(PDU_STATUS_DATA*)(pEvt->pData) = PDU_COPST_EXECUTING;
-			it->second->SignalEvent(pEvt);
+			void* effCopTag = (pCoPTag != nullptr) ? pCoPTag : s_dummyCopFlags;
+			UNUM32 nowMs = static_cast<UNUM32>(GetTickCount());
 
-			pEvt = new PDU_EVENT_ITEM;
-			pEvt->hCop = *phCoP;
-			pEvt->ItemType = PDU_IT_STATUS;
-			pEvt->pCoPTag = pCoPTag;
-			pEvt->pData = new PDU_STATUS_DATA;
-			*(PDU_STATUS_DATA*)(pEvt->pData) = PDU_COPST_FINISHED;
-			it->second->SignalEvent(pEvt);
+			PDU_EVENT_ITEM* pEvt1 = SaabExt_CreateTech2WinStatusEvent(PDU_COPST_EXECUTING, nowMs, effCopTag);
+			if (pEvt1 != nullptr)
+			{
+				pEvt1->hCop = *phCoP;
+				it->second->QueueEventOnly(pEvt1);
+			}
 
+			PDU_EVENT_ITEM* pEvt2 = SaabExt_CreateTech2WinStatusEvent(PDU_COPST_FINISHED, nowMs, effCopTag);
+			if (pEvt2 != nullptr)
+			{
+				pEvt2->hCop = *phCoP;
+				it->second->QueueEventOnly(pEvt2);
+			}
+
+			it->second->NotifyEvents(effCopTag);
 			break;
+		}
 		case PDU_COPT_STARTCOMM:
 		case PDU_COPT_STOPCOMM:
 		case PDU_COPT_SENDRECV:
@@ -440,6 +535,12 @@ T_PDU_ERROR __stdcall PDUCancelComPrimitive(UNUM32 hMod, UNUM32 hCLL, UNUM32 hCo
 	return ret;
 }
 
+T_PDU_ERROR __stdcall PDUStopComPrimitive(UNUM32 hMod, UNUM32 hCLL, UNUM32 hCoP)
+{
+	LOGGER.logInfo("PDUStopComPrimitive", "hMod %u, hCLL %u, hCoP %u", hMod, hCLL, hCoP);
+	return PDUCancelComPrimitive(hMod, hCLL, hCoP);
+}
+
 T_PDU_ERROR __stdcall PDUGetEventItem(UNUM32 hMod, UNUM32 hCLL, PDU_EVENT_ITEM** pEventItem)
 {
 	T_PDU_ERROR ret = PDU_STATUS_NOERROR;
@@ -468,8 +569,25 @@ T_PDU_ERROR __stdcall PDUGetEventItem(UNUM32 hMod, UNUM32 hCLL, PDU_EVENT_ITEM**
 
 T_PDU_ERROR __stdcall PDUDestroyItem(PDU_ITEM* pItem)
 {
+	if (pItem == nullptr)
+	{
+		return PDU_STATUS_NOERROR;
+	}
+
 	switch (pItem->ItemType)
 	{
+		case PDU_IT_PARAM:
+		{
+			PDU_PARAM_ITEM* pParam = (PDU_PARAM_ITEM*)pItem;
+			LOGGER.logInfo("PDUDestroyItem", "Deleted PDU_IT_PARAM pItem %p", pItem);
+			if (pParam->pComParamData != nullptr)
+			{
+				delete (UNUM32*)pParam->pComParamData;
+				pParam->pComParamData = nullptr;
+			}
+			delete pParam;
+			break;
+		}
 		case PDU_IT_IO_UNUM32:
 		{
 			PDU_DATA_ITEM* pIt = (PDU_DATA_ITEM*)pItem;
@@ -479,6 +597,11 @@ T_PDU_ERROR __stdcall PDUDestroyItem(PDU_ITEM* pItem)
 			pIt = nullptr;
 
 			LOGGER.logInfo("PDUDestroyItem", "Deleted PDU_IT_IO_UNUM32 pItem %p", pItem);
+			break;
+		}
+		case PDU_IT_MODULE_ID:
+		{
+			LOGGER.logInfo("PDUDestroyItem", "Acknowledged PDU_IT_MODULE_ID pItem %p", pItem);
 			break;
 		}
 		case PDU_IT_STATUS:
@@ -495,11 +618,25 @@ T_PDU_ERROR __stdcall PDUDestroyItem(PDU_ITEM* pItem)
 		case PDU_IT_RESULT:
 		{
 			PDU_EVENT_ITEM* pIt = (PDU_EVENT_ITEM*)pItem;
-			PDU_RESULT_DATA* pData = (PDU_RESULT_DATA*)pIt->pData;
-			delete[] pData->pDataBytes;
-			pData->pDataBytes = nullptr;
-			delete pIt->pData;
-			pIt->pData = nullptr;
+			if (pIt->pData != nullptr)
+			{
+				if (SaabExt_IsTech2WinResult(pIt->pData))
+				{
+					SaabExt_DestroyTech2WinResult(pIt->pData);
+					pIt->pData = nullptr;
+				}
+				else
+				{
+					PDU_RESULT_DATA* pData = (PDU_RESULT_DATA*)pIt->pData;
+					if (pData->pDataBytes != nullptr)
+					{
+						delete[] pData->pDataBytes;
+						pData->pDataBytes = nullptr;
+					}
+					delete pData;
+					pIt->pData = nullptr;
+				}
+			}
 			delete pIt;
 			pIt = nullptr;
 
@@ -517,6 +654,19 @@ T_PDU_ERROR __stdcall PDUDestroyItem(PDU_ITEM* pItem)
 
 T_PDU_ERROR __stdcall PDURegisterEventCallback(UNUM32 hMod, UNUM32 hCLL, CALLBACKFNC EventCallbackFunction)
 {
+	if (hCLL == PDU_HANDLE_UNDEF)
+	{
+		m_moduleCallback = EventCallbackFunction;
+		for (auto& pair : m_commChannels)
+		{
+			if (pair.second->GetEventCallback() == nullptr)
+			{
+				pair.second->RegisterEventCallback(EventCallbackFunction);
+			}
+		}
+		return PDU_STATUS_NOERROR;
+	}
+
 	LOGGER.logInfo("PDURegisterEventCallback", "hMod %u, hCLL %u", hMod, hCLL);
 
 	auto it = m_commChannels.find(hCLL);
@@ -595,8 +745,18 @@ T_PDU_ERROR __stdcall PDUGetConflictingResources(UNUM32 resourceId, PDU_MODULE_I
 	return PDU_STATUS_NOERROR;
 }
 
+static PDU_UNIQUE_RESP_ID_TABLE_ITEM s_emptyUridTable = {
+	PDU_IT_UNIQUE_RESP_ID_TABLE,
+	0,
+	nullptr
+};
+
 T_PDU_ERROR __stdcall PDUGetUniqueRespIdTable(UNUM32 hMod, UNUM32 hCLL, PDU_UNIQUE_RESP_ID_TABLE_ITEM** pUniqueRespIdTable)
 {
+	if (pUniqueRespIdTable != nullptr)
+	{
+		*pUniqueRespIdTable = &s_emptyUridTable;
+	}
 	LOGGER.logWarn("STUB", "PDUGetUniqueRespIdTable is unimplimented");
 	return PDU_STATUS_NOERROR;
 }

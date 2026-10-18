@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  D-PDU-API Module Description File for J2534 PassThru Driver
+  DLC Pin definitions: 1 (SW-CAN), 6/14 (HS-CAN), 7/8 (K-Line / UART)
+  Protocols: ISO_15765_2_on_SAE_J2411, ISO_15765_2_on_ISO_11898, ISO_14230_3_on_ISO_14230_2, KW82_on_KW_UART
+
+  Built with AI Pair-Programming (Antigravity / Google DeepMind AI).
+  Inspired by the Saab community - saabiste.net
+
+  Source: https://github.com/oamne/dpdu-passthru
+-->
+<MVCI_MODULE_DESCRIPTION xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="pdu.xsd" FILE_VERSION="2.2.0" MVCI_PART2_STANDARD_VERSION="2.2.0">
+  <SHORT_NAME>DPDU_J2534</SHORT_NAME>
+  <DESCRIPTION>D-PDU-to-J2534 Module Description</DESCRIPTION>
+  <SUPPLIER_NAME>github.com/oamne</SUPPLIER_NAME>
+
+  <!-- DLC Pin Type Definitions -->
+  <PINTYPE EID="PT_SWCAN">
+    <ID>1</ID>
+    <SHORT_NAME>SW_CAN</SHORT_NAME>
+    <DESCRIPTION>Single-Wire CAN (Pin 1 DLC, SAE J2411, 33.333 kbps)</DESCRIPTION>
+  </PINTYPE>
+
+  <PINTYPE EID="PT_CAN_HI">
+    <ID>6</ID>
+    <SHORT_NAME>CAN_HI</SHORT_NAME>
+    <DESCRIPTION>High-Speed CAN High (Pin 6 DLC, ISO 11898, 500 kbps)</DESCRIPTION>
+  </PINTYPE>
+
+  <PINTYPE EID="PT_CAN_LOW">
+    <ID>14</ID>
+    <SHORT_NAME>CAN_LOW</SHORT_NAME>
+    <DESCRIPTION>High-Speed CAN Low (Pin 14 DLC, ISO 11898, 500 kbps)</DESCRIPTION>
+  </PINTYPE>
+
+  <PINTYPE EID="PT_KLINE_7">
+    <ID>7</ID>
+    <SHORT_NAME>K_LINE_7</SHORT_NAME>
+    <DESCRIPTION>K-Line Main Diagnostic (Pin 7 DLC, ISO 14230 / KW82)</DESCRIPTION>
+  </PINTYPE>
+
+  <PINTYPE EID="PT_KLINE_8">
+    <ID>8</ID>
+    <SHORT_NAME>K_LINE_8</SHORT_NAME>
+    <DESCRIPTION>K-Line Secondary / L-Line (Pin 8 DLC)</DESCRIPTION>
+  </PINTYPE>
+
+  <!-- Module Definitions -->
+  <MODULETYPE>
+    <ID>1</ID>
+    <SHORT_NAME>DPDU_J2534</SHORT_NAME>
+    <DESCRIPTION>D-PDU Multi-Protocol J2534 Interface</DESCRIPTION>
+
+    <!-- Protocols Supported -->
+    <PROTOCOL>
+      <ID>1001</ID>
+      <SHORT_NAME>ISO_15765_2_on_SAE_J2411</SHORT_NAME>
+      <DESCRIPTION>GMLAN Single-Wire CAN on DLC Pin 1</DESCRIPTION>
+      <PIN IDREF="PT_SWCAN"/>
+    </PROTOCOL>
+
+    <PROTOCOL>
+      <ID>1002</ID>
+      <SHORT_NAME>ISO_15765_2_on_ISO_11898</SHORT_NAME>
+      <DESCRIPTION>GMLAN / Powertrain High-Speed CAN on DLC Pins 6 &amp; 14</DESCRIPTION>
+      <PIN IDREF="PT_CAN_HI"/>
+      <PIN IDREF="PT_CAN_LOW"/>
+    </PROTOCOL>
+
+    <PROTOCOL>
+      <ID>1003</ID>
+      <SHORT_NAME>ISO_14230_3_on_ISO_14230_2</SHORT_NAME>
+      <DESCRIPTION>KWP2000 Diagnostics on DLC Pin 7</DESCRIPTION>
+      <PIN IDREF="PT_KLINE_7"/>
+    </PROTOCOL>
+
+    <PROTOCOL>
+      <ID>1004</ID>
+      <SHORT_NAME>KW82_on_KW_UART</SHORT_NAME>
+      <DESCRIPTION>KW82 Diagnostics on DLC Pin 7</DESCRIPTION>
+      <PIN IDREF="PT_KLINE_7"/>
+    </PROTOCOL>
+  </MODULETYPE>
+</MVCI_MODULE_DESCRIPTION>

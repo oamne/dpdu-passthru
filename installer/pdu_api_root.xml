@@ -6,5 +6,6 @@
     <DESCRIPTION>D-PDU-to-J2534 Implementation</DESCRIPTION>
     <SUPPLIER_NAME>github.com/JohnJocke</SUPPLIER_NAME>
     <LIBRARY_FILE URI="file://C:\Program Files (x86)\dpdu_j2534\driver.dll"/>
+    <MODULE_DESCRIPTION_FILE URI="file://C:\Program Files (x86)\dpdu_j2534\MDF_DPDU.xml"/>
   </MVCI_PDU_API>
 </MVCI_PDU_API_ROOT>

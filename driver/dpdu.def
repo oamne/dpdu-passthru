@@ -1,31 +1,31 @@
-LIBRARY
 EXPORTS
-PDUConstruct @1
-PDUDestruct @2
-PDUModuleConnect @3
-PDUModuleDisconnect @4
-PDUGetTimestamp @5
-PDUIoCtl @6
-PDUGetVersion @7
-PDUGetStatus @8
-PDUGetLastError @9
-PDUGetResourceStatus @10
-PDUCreateComLogicalLink @11
-PDUDestroyComLogicalLink @12
-PDUConnect @13
-PDUDisconnect @14
-PDULockResource @15
-PDUUnlockResource @16
-PDUGetComParam @17
-PDUSetComParam @18
-PDUStartComPrimitive @19
-PDUCancelComPrimitive @20
-PDUGetEventItem @21
-PDUDestroyItem @22
-PDURegisterEventCallback @23
-PDUGetObjectId @24
-PDUGetModuleIds @25
-PDUGetResourceIds @26
-PDUGetConflictingResources @27
-PDUGetUniqueRespIdTable @28
-PDUSetUniqueRespIdTable @29
+    PDUConstruct @1
+    PDUDestruct @2
+    PDUModuleConnect @3
+    PDUModuleDisconnect @4
+    PDUGetTimestamp @5
+    PDUIoCtl @6
+    PDUGetVersion @7
+    PDUGetStatus @8
+    PDUGetLastError @9
+    PDUGetResourceStatus @10
+    PDUCreateComLogicalLink @11
+    PDUDestroyComLogicalLink @12
+    PDUConnect @13
+    PDUDisconnect @14
+    PDULockResource @15
+    PDUUnlockResource @16
+    PDUGetComParam @17
+    PDUSetComParam @18
+    PDUStartComPrimitive @19
+    PDUCancelComPrimitive @20
+    PDUGetEventItem @21
+    PDUDestroyItem @22
+    PDURegisterEventCallback @23
+    PDUGetObjectId @24
+    PDUGetModuleIds @25
+    PDUGetResourceIds @26
+    PDUGetConflictingResources @27
+    PDUGetUniqueRespIdTable @28
+    PDUSetUniqueRespIdTable @29
+    PDUStopComPrimitive @30

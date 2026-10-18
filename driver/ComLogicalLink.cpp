@@ -13,9 +13,10 @@
 #include <string>
 #include <sstream>
 #include <chrono>
+#include "gmlan_ext/Tech2WinMemory.h"
 
 ComLogicalLink::ComLogicalLink(UNUM32 hMod, UNUM32 hCLL, unsigned long deviceID, enum Protocol protocol) :
-m_eventCallbackFnc(nullptr), m_hMod(hMod), m_hCLL(hCLL), m_status(PDU_CLLST_OFFLINE), m_protocol(protocol), m_deviceID(deviceID), m_channelID(0), m_running(false)
+m_eventCallbackFnc(nullptr), m_running(false), m_hMod(hMod), m_hCLL(hCLL), m_pCllTag(nullptr), m_status(PDU_CLLST_OFFLINE), m_protocol(protocol), m_pGmlanAdapter(nullptr), m_deviceID(deviceID), m_protocolID(0), m_channelID(0)
 {
 	switch (protocol)
 	{
@@ -25,6 +26,9 @@ m_eventCallbackFnc(nullptr), m_hMod(hMod), m_hCLL(hCLL), m_status(PDU_CLLST_OFFL
 	case CLL_KW82:
 		m_protocolID = ISO9141;
 		break;
+	case CLL_GMLAN_CAN: // Covers CLL_SAAB_CAN alias (0x03)
+		m_protocolID = 0;
+		break;
 	default:
 		m_protocolID = 0;
 		break;
@@ -33,6 +37,27 @@ m_eventCallbackFnc(nullptr), m_hMod(hMod), m_hCLL(hCLL), m_status(PDU_CLLST_OFFL
 
 long ComLogicalLink::Connect()
 {
+	if (m_running)
+	{
+		return STATUS_NOERROR;
+	}
+
+	if (m_pGmlanAdapter != nullptr)
+	{
+		m_pGmlanAdapter->Connect(m_deviceID, this);
+		m_status = PDU_CLLST_ONLINE;
+		m_running = true;
+
+		PDU_EVENT_ITEM* pEvt = new PDU_EVENT_ITEM;
+		pEvt->hCop = PDU_HANDLE_UNDEF;
+		pEvt->ItemType = PDU_IT_STATUS;
+		pEvt->pCoPTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+		pEvt->pData = new PDU_STATUS_DATA(m_status, static_cast<UNUM32>(GetTickCount()));
+
+		SignalEvent(pEvt);
+		return STATUS_NOERROR;
+	}
+
 	long ret = STATUS_NOERROR;
 	switch (m_protocol)
 	{
@@ -65,9 +90,8 @@ long ComLogicalLink::Connect()
 		PDU_EVENT_ITEM* pEvt = new PDU_EVENT_ITEM;
 		pEvt->hCop = PDU_HANDLE_UNDEF;
 		pEvt->ItemType = PDU_IT_STATUS;
-		pEvt->pCoPTag = nullptr;
-		pEvt->pData = new PDU_STATUS_DATA;
-		*(PDU_STATUS_DATA*)(pEvt->pData) = m_status;
+		pEvt->pCoPTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+		pEvt->pData = new PDU_STATUS_DATA(m_status, static_cast<UNUM32>(GetTickCount()));
 
 		SignalEvent(pEvt);
 	}
@@ -77,6 +101,27 @@ long ComLogicalLink::Connect()
 
 long ComLogicalLink::Disconnect()
 {
+	if (!m_running && m_status == PDU_CLLST_OFFLINE)
+	{
+		return STATUS_NOERROR;
+	}
+
+	if (m_pGmlanAdapter != nullptr)
+	{
+		m_running = false;
+		m_status = PDU_CLLST_OFFLINE;
+
+		PDU_EVENT_ITEM* pEvt = new PDU_EVENT_ITEM;
+		pEvt->hCop = PDU_HANDLE_UNDEF;
+		pEvt->ItemType = PDU_IT_STATUS;
+		pEvt->pCoPTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+		pEvt->pData = new PDU_STATUS_DATA(m_status, static_cast<UNUM32>(GetTickCount()));
+
+		SignalEvent(pEvt);
+
+		return m_pGmlanAdapter->Disconnect();
+	}
+
 	long ret = STATUS_NOERROR;
 
 	m_running = false;
@@ -99,9 +144,8 @@ long ComLogicalLink::Disconnect()
 	PDU_EVENT_ITEM* pEvt = new PDU_EVENT_ITEM;
 	pEvt->hCop = PDU_HANDLE_UNDEF;
 	pEvt->ItemType = PDU_IT_STATUS;
-	pEvt->pCoPTag = nullptr;
-	pEvt->pData = new PDU_STATUS_DATA;
-	*(PDU_STATUS_DATA*)(pEvt->pData) = m_status;
+	pEvt->pCoPTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+	pEvt->pData = new PDU_STATUS_DATA(m_status, static_cast<UNUM32>(GetTickCount()));
 
 	SignalEvent(pEvt);
 	
@@ -119,6 +163,11 @@ T_PDU_ERROR ComLogicalLink::GetStatus(T_PDU_STATUS& status)
 
 T_PDU_ERROR ComLogicalLink::GetStatus(UNUM32 hCoP, T_PDU_STATUS& status)
 {
+	if (m_pGmlanAdapter != nullptr)
+	{
+		return m_pGmlanAdapter->GetStatus(hCoP, status);
+	}
+
 	T_PDU_ERROR ret = PDU_STATUS_NOERROR;
 
 	{
@@ -146,6 +195,11 @@ T_PDU_ERROR ComLogicalLink::GetStatus(UNUM32 hCoP, T_PDU_STATUS& status)
 
 T_PDU_ERROR ComLogicalLink::Cancel(UNUM32 hCoP)
 {
+	if (m_pGmlanAdapter != nullptr)
+	{
+		return m_pGmlanAdapter->Cancel(hCoP);
+	}
+
 	T_PDU_ERROR ret = PDU_STATUS_NOERROR;
 
 	PDU_EVENT_ITEM* pEvt = nullptr;
@@ -175,6 +229,11 @@ T_PDU_ERROR ComLogicalLink::Cancel(UNUM32 hCoP)
 
 UNUM32 ComLogicalLink::StartComPrimitive(UNUM32 CoPType, UNUM32 CoPDataSize, UNUM8* pCoPData, PDU_COP_CTRL_DATA* pCopCtrlData, void* pCoPTag)
 {
+	if (m_pGmlanAdapter != nullptr)
+	{
+		return m_pGmlanAdapter->StartComPrimitive(CoPType, CoPDataSize, pCoPData, pCopCtrlData, pCoPTag);
+	}
+
     std::shared_ptr<ComPrimitive> cop;
 
     switch (m_protocol)  
@@ -198,6 +257,11 @@ UNUM32 ComLogicalLink::StartComPrimitive(UNUM32 CoPType, UNUM32 CoPDataSize, UNU
 
 long ComLogicalLink::StartMsgFilter(unsigned long filterType)
 {
+	if (m_pGmlanAdapter != nullptr)
+	{
+		return STATUS_NOERROR;
+	}
+
 	long ret = STATUS_NOERROR;
 
 	if (!m_running)
@@ -264,8 +328,9 @@ void ComLogicalLink::SignalEvent(PDU_EVENT_ITEM* pEvt)
 		return;
 	}
 
+	void* pCopTag = pEvt->pCoPTag;
 	QueueEvent(pEvt);
-	SignalEvents();
+	SignalEvents(pCopTag);
 }
 
 long ComLogicalLink::SetComParam()
@@ -312,11 +377,17 @@ long ComLogicalLink::SetComParam()
 	return ret;
 }
 
-void ComLogicalLink::SignalEvents()
+void ComLogicalLink::SignalEvents(void* pCopTag)
 {
-	LOGGER.logInfo("ComLogicalLink/SignalEvents", "Signaled events");
+	LOGGER.logInfo("ComLogicalLink/SignalEvents", "Signaled events for hCLL %u, pCllTag %p, pCoPTag %p",
+                   m_hCLL, m_pCllTag, pCopTag);
 
-	m_eventCallbackFnc(PDU_EVT_DATA_AVAILABLE, m_hMod, m_hCLL, nullptr, nullptr);
+	if (m_eventCallbackFnc != nullptr)
+	{
+		void* effectiveCllTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+		void* effectiveCopTag = (pCopTag != nullptr) ? pCopTag : s_dummyCopFlags;
+		m_eventCallbackFnc(PDU_EVT_DATA_AVAILABLE, m_hMod, m_hCLL, effectiveCllTag, effectiveCopTag);
+	}
 }
 
 void ComLogicalLink::QueueEvent(PDU_EVENT_ITEM* pEvt)
@@ -429,9 +500,8 @@ long ComLogicalLink::StartComm(std::shared_ptr<ComPrimitive> cop)
 		pEvt = new PDU_EVENT_ITEM;
 		pEvt->hCop = PDU_HANDLE_UNDEF;
 		pEvt->ItemType = PDU_IT_STATUS;
-		pEvt->pCoPTag = nullptr;
-		pEvt->pData = new PDU_STATUS_DATA;
-		*(PDU_STATUS_DATA*)(pEvt->pData) = m_status;
+		pEvt->pCoPTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+		pEvt->pData = new PDU_STATUS_DATA(m_status, static_cast<UNUM32>(GetTickCount()));
 
 		SignalEvent(pEvt);
 	}
@@ -454,9 +524,8 @@ long ComLogicalLink::StopComm(std::shared_ptr<ComPrimitive> cop)
 		pEvt = new PDU_EVENT_ITEM;
 		pEvt->hCop = PDU_HANDLE_UNDEF;
 		pEvt->ItemType = PDU_IT_STATUS;
-		pEvt->pCoPTag = nullptr;
-		pEvt->pData = new PDU_STATUS_DATA;
-		*(PDU_STATUS_DATA*)(pEvt->pData) = m_status;
+		pEvt->pCoPTag = (m_pCllTag != nullptr) ? m_pCllTag : s_dummyCopFlags;
+		pEvt->pData = new PDU_STATUS_DATA(m_status, static_cast<UNUM32>(GetTickCount()));
 
 		SignalEvent(pEvt);
 

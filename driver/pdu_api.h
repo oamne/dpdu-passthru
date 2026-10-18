@@ -231,7 +231,7 @@ typedef enum E_PDU_ERROR
    PDU_ERR_COMPARAM_NOT_SUPPORTED  = 0x00000063,   /* ComParam id not supported by the implementation of the D-PDU API */
    PDU_ERR_COMPARAM_LOCKED         = 0x00000064,   /* Physical ComParam cannot be changed because it is locked by 
                                                       another ComLogicalLink */
-   PDU_ERR_TX_QUEUE_FULL           = 0x00000070,   /* The ComLogicalLink’s transmit queue is full; the ComPrimitive 
+   PDU_ERR_TX_QUEUE_FULL           = 0x00000070,   /* The ComLogicalLinkï¿½s transmit queue is full; the ComPrimitive 
                                                       could not be queued */
    PDU_ERR_EVENT_QUEUE_EMPTY       = 0x00000071,   /* No more event items are available to be read from the requested 
                                                       queue */
@@ -395,7 +395,7 @@ typedef struct {
                                    /* If the result matches this pattern message and the FilterType is BLOCK_FILTER, */
                                    /* then the incoming message will be discarded (otherwise it will be processed for further reception). */
                                    /* Message bytes in the received message that are beyond the DataSize of the pattern message */
-                                   /* will be treated as 'don’t care'.*/
+                                   /* will be treated as 'donï¿½t care'.*/
 } PDU_IO_FILTER_DATA;
 
 // IOCTL filter list structure (PDU_IT_IO_FILTER)
@@ -510,7 +510,24 @@ typedef struct {
 } PDU_EVENT_ITEM;
 
 // Asynchronous status change notification for PDU_IT_STATUS Item.
-typedef T_PDU_STATUS PDU_STATUS_DATA;  /* Status code information. See section D.1.4 to D.1.6*/
+// [UPSTREAM ORIGINAL - PRESERVED AS COMMENT]
+// typedef T_PDU_STATUS PDU_STATUS_DATA;  /* Status code information. See section D.1.4 to D.1.6*/
+
+#pragma pack(push, 1)
+typedef struct S_PDU_STATUS_DATA {
+   T_PDU_STATUS StatusType;
+   UNUM32 TimestampFlags;              /* 0 */
+   UNUM32 Timestamp;                   /* Timestamp in microseconds / milliseconds */
+   UNUM32 ExtraDataIndex;              /* 0 */
+
+   S_PDU_STATUS_DATA() : StatusType(PDU_COPST_IDLE), TimestampFlags(0), Timestamp(0), ExtraDataIndex(0) {}
+   S_PDU_STATUS_DATA(T_PDU_STATUS st) : StatusType(st), TimestampFlags(0), Timestamp(0), ExtraDataIndex(0) {}
+   S_PDU_STATUS_DATA(T_PDU_STATUS st, UNUM32 ts) : StatusType(st), TimestampFlags(0), Timestamp(ts), ExtraDataIndex(0) {}
+
+   operator T_PDU_STATUS() const { return StatusType; }
+   S_PDU_STATUS_DATA& operator=(T_PDU_STATUS st) { StatusType = st; return *this; }
+} PDU_STATUS_DATA;
+#pragma pack(pop)
 
 // Asynchronous event information notification for PDU_IT_INFO Item.
 typedef struct {
@@ -523,7 +540,7 @@ typedef struct {
    T_PDU_ERR_EVT ErrorCodeId;          /* error code, binary information. */
    UNUM32 ExtraErrorInfoId;            /* Optional additional error information, text translation via MDF file.  
                                           Binary Information, 0 indicates no additional error information
-                                          See section Table D.18 - Event error and examples for additional error codes */
+                                          See section Tableï¿½D.18 - Event error and examples for additional error codes */
 } PDU_ERROR_DATA;
 
 // Structure for extra result data information
@@ -694,11 +711,11 @@ typedef struct {
 	UNUM32	CombinationMode;	               /* Combination mode: */
 				                                 /* 0= no combination */
 				                                 /* 1= combine DoIP entities with common VIN */
-				                                 /*    into MVCI of type “DoIP-Vehicle” */
+				                                 /*    into MVCI of type ï¿½DoIP-Vehicleï¿½ */
 				                                 /* 2= combine DoIP entities with common GroupID */
-				                                 /*    into MVCI of type “DoIP-Group” */
+				                                 /*    into MVCI of type ï¿½DoIP-Groupï¿½ */
 				                                 /* 3= combine all DoIP entities */
-				                                 /*    into MVCI of type “DoIP-Collection” */
+				                                 /*    into MVCI of type ï¿½DoIP-Collectionï¿½ */
 	UNUM32	VehicleDiscoveryTime;	         /* Time-out to wait for vehicle identification 	responses. 0=return immediately, or time in 	milliseconds. */
 	UNUM32	NumDestinationAddresses;	      /* Number of broadcast/multicast addresses in the destination address array. May be 0 for default */
 	PDU_IP_ADDR_INFO *pDestinationAddresses;	/* pointer to an array of IP addresses on which broadcast/multicast should be performed */

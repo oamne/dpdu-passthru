@@ -90,6 +90,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -179,6 +180,10 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="pdu_api.h" />
     <ClInclude Include="Settings.h" />
+    <ClInclude Include="gmlan_ext\GmlanCanAdapter.h" />
+    <ClInclude Include="gmlan_ext\IGmlanAdapter.h" />
+    <ClInclude Include="gmlan_ext\PassThruChannelManager.h" />
+    <ClInclude Include="gmlan_ext\Tech2WinMemory.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ComLogicalLink.cpp" />
@@ -199,6 +204,18 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="gmlan_ext\GmlanCanAdapter.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="gmlan_ext\PassThruChannelManager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="gmlan_ext\Tech2WinMemory.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.github\workflows\build.yml" />
